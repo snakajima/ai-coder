@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Falling Cubes Physics Demo</title>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+<script type="importmap">
+{
+    "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "cannon-es": "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js"
+    }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
+
+// Scene setup
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer();
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// Physics world
+const world = new CANNON.World();
+world.gravity.set(0, -9.82, 0); // Gravity in y-direction
+
+// Ground
+const groundGeometry = new THREE.PlaneGeometry(100, 100);
+const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x888888 });
+const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
+groundMesh.rotation.x = -Math.PI / 2;
+scene.add(groundMesh);
+
+const groundBody = new CANNON.Body({
+    mass: 0, // Static body
+    shape: new CANNON.Plane()
+});
+groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+world.addBody(groundBody);
+
+// Cube array and physics bodies
+const cubes = [];
+const cubeBodies = [];
+const cubeSize = 1;
+const cubeCount = 10;
+
+for (let i = 0; i < cubeCount; i++) {
+    // Visual cube
+    const geometry = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
+    const material = new THREE.MeshBasicMaterial({ 
+        color: Math.random() * 0xffffff 
+    });
+    const cube = new THREE.Mesh(geometry, material);
+    scene.add(cube);
+    cubes.push(cube);
+
+    // Physics body
+    const cubeBody = new CANNON.Body({
+        mass: 1,
+        shape: new CANNON.Box(new CANNON.Vec3(cubeSize/2, cubeSize/2, cubeSize/2))
+    });
+    cubeBody.position.set(
+        (Math.random() - 0.5) * 20,
+        5 + i * 2,
+        (Math.random() - 0.5) * 20
+    );
+    world.addBody(cubeBody);
+    cubeBodies.push(cubeBody);
+}
+
+// Camera position
+camera.position.set(0, 10, 20);
+camera.lookAt(0, 0, 0);
+
+// Animation
+const clock = new THREE.Clock();
+function animate() {
+    requestAnimationFrame(animate);
+
+    // Step the physics world
+    const delta = clock.getDelta();
+    world.step(1/60, delta);
+
+    // Sync Three.js meshes with physics bodies
+    for (let i = 0; i < cubes.length; i++) {
+        cubes[i].position.copy(cubeBodies[i].position);
+        cubes[i].quaternion.copy(cubeBodies[i].quaternion);
+    }
+
+    renderer.render(scene, camera);
+}
+animate();
+
+// Window resize handler
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

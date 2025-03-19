@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js Physics Demo</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #f0f0f0;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            color: white;
+            font-family: Arial, sans-serif;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+            pointer-events: none;
+            z-index: 100;
+        }
+        #button-container {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            z-index: 100;
+        }
+        button {
+            padding: 8px 16px;
+            font-size: 16px;
+            border: none;
+            border-radius: 4px;
+            background-color: #2196F3;
+            color: white;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #0b7dda;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">Click and drag to rotate view. Scroll to zoom.</div>
+    <div id="button-container">
+        <button id="add-cube">Add Cube</button>
+        <button id="add-sphere">Add Sphere</button>
+        <button id="reset">Reset Scene</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.159.0/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+    <script>
+        // Initialize Three.js scene
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB); // Sky blue background
+        
+        // Set up camera
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 5, 10);
+        camera.lookAt(0, 0, 0);
+        
+        // Set up renderer
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+        
+        // Set up lights
+        const ambientLight = new THREE.AmbientLight(0x404040);
+        scene.add(ambientLight);
+        
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(5, 10, 7.5);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.camera.top = 10;
+        directionalLight.shadow.camera.bottom = -10;
+        directionalLight.shadow.camera.left = -10;
+        directionalLight.shadow.camera.right = 10;
+        scene.add(directionalLight);
+        
+        // Initialize physics world
+        const world = new CANNON.World();
+        world.gravity.set(0, -9.82, 0); // Earth's gravity
+        world.broadphase = new CANNON.NaiveBroadphase();
+        world.solver.iterations = 10;
+        
+        // Objects arrays to keep track of meshes and bodies
+        const objects = [];
+        
+        // Create a ground
+        const groundGeometry = new THREE.PlaneGeometry(20, 20);
+        const groundMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x999999,
+            roughness: 0.8,
+            metalness: 0.1
+        });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+        
+        // Create a ground physics body
+        const groundBody = new CANNON.Body({
+            mass: 0, // Static body (infinite mass)
+            shape: new CANNON.Plane()
+        });
+        groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
+        world.addBody(groundBody);
+        
+        // Add a random colored cube with physics
+        function addCube(size = 1) {
+            // Random position above ground
+            const x = (Math.random() - 0.5) * 6;
+            const y = 5 + Math.random() * 5;
+            const z = (Math.random() - 0.5) * 6;
+            
+            // Random color
+            const color = new THREE.Color(Math.random(), Math.random(), Math.random());
+            
+            // Create Three.js cube
+            const geometry = new THREE.BoxGeometry(size, size, size);
+            const material = new THREE.MeshStandardMaterial({ 
+                color: color,
+                roughness: 0.7,
+                metalness: 0.2
+            });
+            const cube = new THREE.Mesh(geometry, material);
+            cube.castShadow = true;
+            cube.receiveShadow = true;
+            cube.position.set(x, y, z);
+            scene.add(cube);
+            
+            // Create Cannon.js body
+            const boxShape = new CANNON.Box(new CANNON.Vec3(size/2, size/2, size/2));
+            const boxBody = new CANNON.Body({
+                mass: 1,
+                shape: boxShape,
+                position: new CANNON.Vec3(x, y, z),
+                material: new CANNON.Material({
+                    friction: 0.3,
+                    restitution: 0.3 // Bounciness
+                })
+            });
+            
+            // Add some rotation
+            boxBody.angularVelocity.set(
+                Math.random() * 2 - 1,
+                Math.random() * 2 - 1,
+                Math.random() * 2 - 1
+            );
+            
+            world.addBody(boxBody);
+            
+            // Store the mesh and body pair
+            objects.push({
+                mesh: cube,
+                body: boxBody
+            });
+        }
+        
+        // Add a sphere with physics
+        function addSphere(radius = 0.5) {
+            // Random position above ground
+            const x = (Math.random() - 0.5) * 6;
+            const y = 5 + Math.random() * 5;
+            const z = (Math.random() - 0.5) * 6;
+            
+            // Random color
+            const color = new THREE.Color(Math.random(), Math.random(), Math.random());
+            
+            // Create Three.js sphere
+            const geometry = new THREE.SphereGeometry(radius, 32, 32);
+            const material = new THREE.MeshStandardMaterial({ 
+                color: color,
+                roughness: 0.5,
+                metalness: 0.3
+            });
+            const sphere = new THREE.Mesh(geometry, material);
+            sphere.castShadow = true;
+            sphere.receiveShadow = true;
+            sphere.position.set(x, y, z);
+            scene.add(sphere);
+            
+            // Create Cannon.js body
+            const sphereShape = new CANNON.Sphere(radius);
+            const sphereBody = new CANNON.Body({
+                mass: 1,
+                shape: sphereShape,
+                position: new CANNON.Vec3(x, y, z),
+                material: new CANNON.Material({
+                    friction: 0.1,
+                    restitution: 0.7 // More bouncy than cubes
+                })
+            });
+            
+            world.addBody(sphereBody);
+            
+            // Store the mesh and body pair
+            objects.push({
+                mesh: sphere,
+                body: sphereBody
+            });
+        }
+        
+        // Create walls to keep objects contained
+        function createWalls() {
+            const wallSize = 20;
+            const wallHeight = 10;
+            const wallThickness = 0.5;
+            
+            // Materials
+            const wallMaterial = new THREE.MeshStandardMaterial({
+                color: 0x808080,
+                transparent: true,
+                opacity: 0.3,
+                roughness: 0.7
+            });
+            
+            // Create four walls
+            const wallGeometryX = new THREE.BoxGeometry(wallSize, wallHeight, wallThickness);
+            const wallGeometryZ = new THREE.BoxGeometry(wallThickness, wallHeight, wallSize);
+            
+            // Back wall
+            const backWall = new THREE.Mesh(wallGeometryX, wallMaterial);
+            backWall.position.set(0, wallHeight/2, -wallSize/2);
+            scene.add(backWall);
+            
+            // Front wall
+            const frontWall = new THREE.Mesh(wallGeometryX, wallMaterial);
+            frontWall.position.set(0, wallHeight/2, wallSize/2);
+            scene.add(frontWall);
+            
+            // Left wall
+            const leftWall = new THREE.Mesh(wallGeometryZ, wallMaterial);
+            leftWall.position.set(-wallSize/2, wallHeight/2, 0);
+            scene.add(leftWall);
+            
+            // Right wall
+            const rightWall = new THREE.Mesh(wallGeometryZ, wallMaterial);
+            rightWall.position.set(wallSize/2, wallHeight/2, 0);
+            scene.add(rightWall);
+            
+            // Create physics bodies for walls
+            const createWallBody = (position, size) => {
+                const wallBody = new CANNON.Body({
+                    mass: 0, // Static body
+                    shape: new CANNON.Box(new CANNON.Vec3(size.x/2, size.y/2, size.z/2)),
+                    position: new CANNON.Vec3(position.x, position.y, position.z)
+                });
+                world.addBody(wallBody);
+            };
+            
+            // Add physics bodies
+            createWallBody({x: 0, y: wallHeight/2, z: -wallSize/2}, {x: wallSize, y: wallHeight, z: wallThickness});
+            createWallBody({x: 0, y: wallHeight/2, z: wallSize/2}, {x: wallSize, y: wallHeight, z: wallThickness});
+            createWallBody({x: -wallSize/2, y: wallHeight/2, z: 0}, {x: wallThickness, y: wallHeight, z: wallSize});
+            createWallBody({x: wallSize/2, y: wallHeight/2, z: 0}, {x: wallThickness, y: wallHeight, z: wallSize});
+        }
+        
+        // Basic camera controls
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        const cameraDistance = camera.position.length();
+        
+        document.addEventListener('mousedown', function(event) {
+            isDragging = true;
+            previousMousePosition = { x: event.clientX, y: event.clientY };
+        });
+        
+        document.addEventListener('mousemove', function(event) {
+            if (isDragging) {
+                const deltaX = event.clientX - previousMousePosition.x;
+                const deltaY = event.clientY - previousMousePosition.y;
+                
+                // Rotate camera around the scene
+                const cameraX = camera.position.x;
+                const cameraZ = camera.position.z;
+                
+                // Horizontal rotation
+                const angle = -deltaX * 0.01;
+                camera.position.x = cameraX * Math.cos(angle) - cameraZ * Math.sin(angle);
+                camera.position.z = cameraX * Math.sin(angle) + cameraZ * Math.cos(angle);
+                
+                // Vertical rotation (limited)
+                camera.position.y += deltaY * 0.05;
+                camera.position.y = Math.max(1, Math.min(15, camera.position.y));
+                
+                // Keep the same distance from origin
+                const currentDistance = new THREE.Vector3().subVectors(
+                    new THREE.Vector3(),
+                    camera.position
+                ).length();
+                
+                camera.position.normalize().multiplyScalar(cameraDistance);
+                
+                camera.lookAt(0, 0, 0);
+                
+                previousMousePosition = { x: event.clientX, y: event.clientY };
+            }
+        });
+        
+        document.addEventListener('mouseup', function() {
+            isDragging = false;
+        });
+        
+        // Zoom with mouse wheel
+        document.addEventListener('wheel', function(event) {
+            const zoomSpeed = 0.1;
+            const direction = event.deltaY > 0 ? 1 : -1;
+            
+            // Zoom in or out
+            const newPosition = camera.position.clone();
+            newPosition.multiplyScalar(1 + direction * zoomSpeed);
+            
+            // Limit how far in/out we can zoom
+            if (newPosition.length() > 3 && newPosition.length() < 20) {
+                camera.position.copy(newPosition);
+            }
+        });
+        
+        // Button events
+        document.getElementById('add-cube').addEventListener('click', () => {
+            addCube(Math.random() * 0.5 + 0.5); // Random size between 0.5 and 1
+        });
+        
+        document.getElementById('add-sphere').addEventListener('click', () => {
+            addSphere(Math.random() * 0.3 + 0.3); // Random size between 0.3 and 0.6
+        });
+        
+        document.getElementById('reset').addEventListener('click', () => {
+            // Remove all objects
+            for (let object of objects) {
+                scene.remove(object.mesh);
+                world.removeBody(object.body);
+            }
+            objects.length = 0;
+        });
+        
+        // Add walls
+        createWalls();
+        
+        // Add some initial cubes
+        for (let i = 0; i < 5; i++) {
+            addCube();
+        }
+        
+        // Animation loop
+        const clock = new THREE.Clock();
+        const timeStep = 1/60; // Physics update frequency
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Step the physics world
+            world.step(timeStep);
+            
+            // Update mesh positions
+            for (let i = 0; i < objects.length; i++) {
+                const object = objects[i];
+                const position = object.body.position;
+                const quaternion = object.body.quaternion;
+                
+                object.mesh.position.copy(new THREE.Vector3(position.x, position.y, position.z));
+                object.mesh.quaternion.copy(new THREE.Quaternion(quaternion.x, quaternion.y, quaternion.z, quaternion.w));
+            }
+            
+            renderer.render(scene, camera);
+        }
+        
+        // Handle window resize
+        window.addEventListener('resize', function() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        // Start animation
+        animate();
+    </script>
+</body>
+</html>
